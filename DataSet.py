@@ -16,7 +16,7 @@ def gerar_dataset_formatado():
     
     print(Y_numerico)
   
-    return
+    return X, Y
 
 
 
