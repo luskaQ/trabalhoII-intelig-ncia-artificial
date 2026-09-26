@@ -1,23 +1,24 @@
 import pandas as pd
 import numpy as np
 
-def gerar_dataset_formatado():
-    df = pd.read_csv("dataset/enhanced_student_habits_performance_dataset.csv")
-    alvo = df['dropout_risk']
-    features = df.drop(columns=['dropout_risk'])
+def gerar_dataset_formatado(dataset):
+    df = pd.read_csv(dataset)
+
+    df = df.drop("student_id", axis=1)
+
+    alvo = df["dropout_risk"]
+    features = df.drop(columns=["dropout_risk"])
+
     X_df = pd.get_dummies(features, dtype=int)
-    X = X_df.values 
+    X = X_df.to_numpy()
 
+    Y = (alvo == "Yes").astype(int).to_numpy()
 
-    Y_numerico, categorias_y = pd.factorize(alvo)
-    Y = Y_numerico
+    print("classe no:", np.sum(Y == 0))
+    print("classe yes:", np.sum(Y == 1))
 
-    print(X_df.head())
-    
-    print(Y_numerico)
-  
     return X, Y
 
 
 
-gerar_dataset_formatado()
+#gerar_dataset_formatado()

@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+from sklearn.utils import resample
 
 
 class NeuralNetwork:
@@ -11,10 +12,18 @@ class NeuralNetwork:
         self.X = (X - np.min(X, axis=0)) / (np.max(X, axis=0) - np.min(X, axis=0)) #estabilizar dados entre 0 e 1
         self.Y = Y.reshape(-1, 1) # faz virar uma matriz coluna (m, 1) ao invez de um vetor 1D
         self.cria_camadas()
+        self.x_min = np.min(X, axis=0)
+        self.x_max = np.max(X, axis=0)
         pass
     
     def reLU(self, x):
         return np.maximum(0, x)
+    
+    def normalizar(self, X):
+        intervalo = self.x_max - self.x_min
+        intervalo[intervalo == 0] = 1
+
+        return (X - self.x_min) / intervalo
     
     def reLU_derivada(self, x):
         return (x > 0).astype(float)
@@ -34,16 +43,17 @@ class NeuralNetwork:
         self.W = {} #cada posicao do dicionario guarda uma matriz de pesos
         self.b = {}
         np.random.seed(42)
-        self.W[1] = np.random.randn(self.quantidade_features, self.num_neuronios_camada_oculta) * 0.01
+        self.W[1] = np.random.randn(self.quantidade_features, self.num_neuronios_camada_oculta) * np.sqrt(2 / self.quantidade_features)
         self.b[1] = np.zeros((1, self.num_neuronios_camada_oculta))
         for i in range(2, self.num_camadas_ocultas + 1):
-            self.W[i] = np.random.randn(self.num_neuronios_camada_oculta, self.num_neuronios_camada_oculta) * 0.01
+            self.W[i] = np.random.randn(self.num_neuronios_camada_oculta, self.num_neuronios_camada_oculta) * np.sqrt(2 / self.num_neuronios_camada_oculta)
             self.b[i] = np.zeros((1, self.num_neuronios_camada_oculta))
         self.W_saida = np.random.randn(self.num_neuronios_camada_oculta, 1) * 0.01
         self.b_saida = np.zeros((1, 1))
             
     def treinar(self):
         for epoca in range(self.num_epocas):
+            tx_mutavel = self.taxa_treino
             #feed forward
             Z = {}
             A = {0: self.X} # meu A[0] é a propria entrada
@@ -57,7 +67,16 @@ class NeuralNetwork:
             dZ_saida = A_saida - self.Y
             
             #backpropagation
-            dZ_saida = A_saida - self.Y
+
+            peso_classe_1 = 5.0 
+
+            erro = A_saida - self.Y
+
+            pesos = np.where(self.Y == 1, peso_classe_1, 1.0)
+
+            dZ_saida = erro * pesos
+
+                
             dW_saida = (1 / self.quantidade_dados) * np.dot(A[self.num_camadas_ocultas].T, dZ_saida)
             db_saida = (1 / self.quantidade_dados) * np.sum(dZ_saida, axis=0, keepdims=True)
             
@@ -74,12 +93,12 @@ class NeuralNetwork:
                 
                 dZ_prox = dZ
                 W_prox = self.W[i]
-            self.W_saida -= self.taxa_treino * dW_saida
-            self.b_saida -= self.taxa_treino * db_saida
+            self.W_saida -= tx_mutavel * dW_saida
+            self.b_saida -= tx_mutavel * db_saida
             
             for i in range(1, self.num_camadas_ocultas + 1):
-                self.W[i] -= self.taxa_treino * dW[i]
-                self.b[i] -= self.taxa_treino * db[i]
+                self.W[i] -= tx_mutavel * dW[i]
+                self.b[i] -= tx_mutavel * db[i]
             if epoca % 100 == 0:
                 loss = -np.mean(self.Y * np.log(A_saida + 1e-8) + (1 - self.Y) * np.log(1 - A_saida + 1e-8)) #cross entropy  binaria
                 
@@ -87,18 +106,123 @@ class NeuralNetwork:
                 acuracia = np.mean(previsoes == self.Y)
                 print(f"Época {epoca:4d} | Perda (Loss): {loss:.4f} | Acurácia: {acuracia * 100:.2f}%")
                 
+    def prever(self, X_previsao):
+        Z = {}
+        A = {0: X_previsao}
+                    
+        for i in range(1, self.num_camadas_ocultas + 1):
+                        Z[i] = np.dot(A[i-1], self.W[i]) + self.b[i] #Resultado atual é o resultado da camda anterior vezes os pesoas atuais + bias
+                        A[i] = self.reLU(Z[i])
+                        
+        Z_saida = np.dot(A[self.num_camadas_ocultas], self.W_saida) + self.b_saida
+        A_saida = self.sigmoid(Z_saida)
+        
+        return A_saida
+        
                 
 import DataSet
 
-X, Y = DataSet.gerar_dataset_formatado()
-                
-rede = NeuralNetwork(
-    num_epocas=1000, 
-    taxa_treino=0.1, 
-    X=X, 
-    Y=Y, 
-    num_camadas_ocultas=2, 
-    num_neuronios_camada_oculta=32
-)
+X, Y = DataSet.gerar_dataset_formatado("dataset/balanced_dataset.csv")
+df = np.column_stack((X, Y))
+df = pd.DataFrame(df)
+df.rename(columns={df.columns[-1]: 'dropout_risk'}, inplace=True)
 
-rede.treinar()
+train_set = df.sample(frac=0.8, random_state=42)
+test_set = df.drop(train_set.index)
+
+X_train = np.array(train_set.drop(columns=['dropout_risk']))
+Y_train = np.array(train_set['dropout_risk'])
+
+X_test = np.array(test_set.drop(columns=['dropout_risk']))
+Y_test = np.array(test_set['dropout_risk'])
+
+dfNo = train_set[train_set['dropout_risk'] == 0]
+dfYes = train_set[train_set['dropout_risk'] == 1]
+print("classe no - train_set: ", len(dfNo))
+print("classe yes - train_set: ", len(dfYes))
+
+dfNo = test_set[test_set['dropout_risk'] == 0]
+dfYes = test_set[test_set['dropout_risk'] == 1]
+print("classe no - test_set ", len(dfNo))
+print("classe yes - test_set: ", len(dfYes))
+
+
+
+
+rede = NeuralNetwork(
+    num_epocas=100000, 
+    taxa_treino=0.01, 
+    X=X_train, 
+    Y=Y_train, 
+    num_camadas_ocultas=3, 
+    num_neuronios_camada_oculta=16
+)
+X_test = rede.normalizar(X_test)
+
+rede.treinar() # type: ignore
+
+tp = fp = tn = fn = 0
+
+for i in range(X_test.shape[0]):
+    pred = rede.prever(X_test[i, :])
+    if pred < 0.5 and Y_test[i] == 0:
+        tn += 1
+    elif(pred < 0.5 and Y_test[i] == 1):
+        fn += 1
+    elif(pred >= 0.5 and Y_test[i] == 1):
+        tp += 1
+    elif(pred >= 0.5 and Y_test[i] == 0):
+        fp += 1
+acuracia = (tn+tp)/(tp+tn+fp+fn+1e-7)
+recall = tp / (tp+fn+1e-7)
+precision = tp / (tp+fp+1e-7)
+f1 = (2 * precision * recall) / (precision + recall +1e-7)
+tnr = tn/(tn+fp+1e-7)
+print(tp, fp, tn, fn)
+print("accuracy: ", acuracia)
+print("recall: ", recall)
+print("precision: ", precision)
+print("f1: ", f1)
+print("tnr: ", tnr)
+
+
+new_x, new_y = DataSet.gerar_dataset_formatado("dataset/nao_usado_no_resample.csv")
+new_x = rede.normalizar(new_x)
+print("classe no - new_y ", np.sum(new_y == 0))
+print("classe yes - new_y: ", np.sum(new_y == 1))
+
+tp = fp = tn = fn = 0
+
+for i in range(new_x.shape[0]):
+
+    pred = rede.prever(new_x[i, :])
+
+    if pred < 0.5 and new_y[i] == 0:
+        tn += 1
+
+    elif pred < 0.5 and new_y[i] == 1:
+        fn += 1
+
+    elif pred >= 0.5 and new_y[i] == 1:
+        tp += 1
+
+    elif pred >= 0.5 and new_y[i] == 0:
+        fp += 1
+
+print(tp, fp, tn, fn)
+acuracia = (tn + tp) / (tp + tn + fp + fn + 1e-7)
+
+recall = tp / (tp + fn + 1e-7)
+
+precision = tp / (tp + fp + 1e-7)
+
+f1 = (2 * precision * recall) / (precision + recall + 1e-7)
+
+tnr = tn / (tn + fp + 1e-7)
+
+
+print("accuracy:", acuracia)
+print("recall:", recall)
+print("precision:", precision)
+print("f1:", f1)
+print("tnr:", tnr)
