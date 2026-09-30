@@ -4,7 +4,7 @@ from sklearn.utils import resample
 
 
 class NeuralNetwork:
-    def __init__(self, num_epocas, taxa_treino, X, Y,num_camadas_ocultas = 1, num_neuronios_camada_oculta = 16) -> None:
+    def __init__(self, num_epocas, taxa_treino, X, Y,num_camadas_ocultas = 1, num_neuronios_camada_oculta = 16, paciencia = 10) -> None:
         self.num_camadas_ocultas = num_camadas_ocultas
         self.num_neuronios_camada_oculta = num_neuronios_camada_oculta
         self.num_epocas = num_epocas
@@ -14,6 +14,7 @@ class NeuralNetwork:
         self.cria_camadas()
         self.x_min = np.min(X, axis=0)
         self.x_max = np.max(X, axis=0)
+        self.paciencia = paciencia
         pass
     
     def reLU(self, x):
@@ -52,6 +53,8 @@ class NeuralNetwork:
         self.b_saida = np.zeros((1, 1))
             
     def treinar(self):
+        best_acc = 0
+        early_stopping = 0
         for epoca in range(self.num_epocas):
             tx_mutavel = self.taxa_treino
             #feed forward
@@ -104,7 +107,16 @@ class NeuralNetwork:
                 
                 previsoes = (A_saida > 0.5).astype(int)
                 acuracia = np.mean(previsoes == self.Y)
+                if(acuracia > best_acc):
+                    best_acc = acuracia
+                    early_stopping = 0
+                else:
+                    early_stopping += 1
                 print(f"Época {epoca:4d} | Perda (Loss): {loss:.4f} | Acurácia: {acuracia * 100:.2f}%")
+            
+            if(early_stopping == self.paciencia):
+                print("Early stopping na epoca {epoca}")
+                break
                 
     def prever(self, X_previsao):
         Z = {}
@@ -155,7 +167,8 @@ rede = NeuralNetwork(
     X=X_train, 
     Y=Y_train, 
     num_camadas_ocultas=3, 
-    num_neuronios_camada_oculta=16
+    num_neuronios_camada_oculta=16,
+    paciencia=10
 )
 X_test = rede.normalizar(X_test)
 
@@ -184,6 +197,9 @@ print("recall: ", recall)
 print("precision: ", precision)
 print("f1: ", f1)
 print("tnr: ", tnr)
+quantidade_acertos = tn + tp
+print("total: ", tn+tp+fp+fn)
+print("acertos: ", quantidade_acertos)
 
 
 new_x, new_y = DataSet.gerar_dataset_formatado("dataset/nao_usado_no_resample.csv")
